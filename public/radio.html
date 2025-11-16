@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <title>Radiopoet · Radio Queue</title>
+  <style>
+    body {
+      margin: 0;
+      height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: radial-gradient(circle at top, #1e293b, #020617);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+      color: #e5e7eb;
+    }
+    .card {
+      background: rgba(15, 23, 42, 0.9);
+      border-radius: 18px;
+      padding: 24px 28px;
+      box-shadow: 0 18px 45px rgba(15, 23, 42, 0.9);
+      max-width: 480px;
+      width: 100%;
+      border: 1px solid rgba(148, 163, 184, 0.2);
+    }
+    h1 { font-size: 22px; margin-bottom: 4px; }
+    .subtitle { font-size: 13px; color: #9ca3af; margin-bottom: 16px; }
+    audio { width: 100%; margin-top: 12px; border-radius: 12px; }
+    .status { margin-top: 8px; font-size: 12px; color: #9ca3af; }
+    .now { margin-top: 8px; font-size: 13px; }
+    .now span { color: #a5b4fc; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Radiopoet · Radio</h1>
+    <div class="subtitle">поток твоих файлов из /audio по кругу</div>
+    <audio id="player" controls autoplay></audio>
+    <div class="now" id="now">Текущий трек: <span>нет</span></div>
+    <div class="status" id="status">Загружаю плейлист…</div>
+  </div>
+
+<script>
+const player = document.getElementById('player');
+const statusEl = document.getElementById('status');
+const nowEl = document.getElementById('now').querySelector('span');
+
+let queue = [];          // очередь URL
+let knownSet = new Set(); // какие треки мы уже знаем
+let isPlaying = false;
+let currentUrl = null;
+
+function setStatus(text) {
+  statusEl.textContent = text;
+}
+
+async function fetchList() {
+  try {
+    const res = await fetch('/list');
+    if (!res.ok) throw new Error(res.status);
+    const data = await res.json();
+    return data; // [{name, url}]
+  } catch (e) {
+    setStatus('Ошибка загрузки списка: ' + e);
+    return [];
+  }
+}
+
+// Инициализация очереди: берём все файлы, добавляем в knownSet и ставим в очередь
+async function initQueue() {
+  const list = await fetchList();
+  if (!list.length) {
+    setStatus('В /audio пока нет файлов.');
+    return;
+  }
+  // Сортируем по имени (можно по другому, если надо)
+  list.sort((a, b) => a.name.localeCompare(b.name));
+  list.forEach(item => {
+    if (!knownSet.has(item.url)) {
+      knownSet.add(item.url);
+      queue.push(item.url);
+    }
+  });
+  setStatus('Плейлист готов. Треков: ' + queue.length);
+  if (!isPlaying) {
+    playNext();
+  }
+}
+
+// Периодически проверяем новые файлы, но не трогаем текущий трек
+async function pollNew() {
+  const list = await fetchList();
+  // Сортируем по имени
+  list.sort((a, b) => a.name.localeCompare(b.name));
+  let added = 0;
+  list.forEach(item => {
+    if (!knownSet.has(item.url)) {
+      knownSet.add(item.url);
+      queue.push(item.url); // новые идут в хвост — как в варианте B
+      added++;
+    }
+  });
+  if (added > 0) {
+    setStatus('Добавлено новых треков: ' + added + '. Всего в очереди: ' + queue.length);
+  }
+}
+
+// Играть следующий трек из очереди
+function playNext() {
+  if (!queue.length) {
+    setStatus('Очередь пуста. Жду новые треки…');
+    currentUrl = null;
+    isPlaying = false;
+    return;
+  }
+  const next = queue.shift();
+  currentUrl = next;
+  nowEl.textContent = next;
+  player.src = next;
+  player.play().then(() => {
+    isPlaying = true;
+    setStatus('Идёт воспроизведение…');
+  }).catch(err => {
+    setStatus('Не удалось воспроизвести: ' + err);
+  });
+}
+
+player.addEventListener('ended', () => {
+  isPlaying = false;
+  // как только текущий трек завершился — берём следующий
+  playNext();
+});
+
+player.addEventListener('error', () => {
+  setStatus('Ошибка плеера, пропускаю трек…');
+  isPlaying = false;
+  playNext();
+});
+
+// Инициализация
+initQueue();
+
+// Периодический опрос новых файлов раз в 10 секунд
+setInterval(pollNew, 10000);
+</script>
+</body>
+</html>

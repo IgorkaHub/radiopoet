@@ -1,0 +1,127 @@
+<!-- public/index.html -->
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Radiopoet — player</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #0f1724; color: #e6eef8; display:flex; gap:20px; padding:24px; }
+    .col { flex:1; min-width:300px; }
+    textarea { width:100%; height:140px; padding:12px; font-size:14px; }
+    button { padding:10px 16px; font-size:15px; cursor:pointer; margin-top:8px; }
+    .list { margin-top:12px; max-height:420px; overflow:auto; background:#0b1220; padding:12px; border-radius:8px; }
+    .item { padding:8px; border-bottom:1px solid rgba(255,255,255,0.03); display:flex; justify-content:space-between; align-items:center; }
+    .small { font-size:13px; color:#9fb0d1 }
+    audio { width:100%; margin-top:12px; }
+  </style>
+</head>
+<body>
+  <div class="col">
+    <h2>Radiopoet — Generate</h2>
+    <textarea id="text" placeholder="Напиши стих или фразу...">Я — поток своей вселенной, я дышу меж строками.</textarea>
+    <div>
+      <button id="gen">Сгенерировать mp3</button>
+      <button id="refresh">Обновить список</button>
+    </div>
+    <div id="msg" class="small"></div>
+    <audio id="player" controls></audio>
+  </div>
+
+  <div class="col">
+    <h2>History / Playlist</h2>
+    <div class="list" id="history"></div>
+  </div>
+
+<script>
+async function fetchList() {
+  const res = await fetch('/list');
+  if (!res.ok) return [];
+  return res.json();
+}
+
+function renderList(list) {
+  const wrap = document.getElementById('history');
+  wrap.innerHTML = '';
+  list.forEach(item => {
+    const el = document.createElement('div');
+    el.className = 'item';
+    el.innerHTML = `<div>
+      <div>${item.name}</div>
+      <div class="small">${item.url}</div>
+    </div>
+    <div>
+      <button data-url="${item.url}" class="playBtn">Play</button>
+    </div>`;
+    wrap.appendChild(el);
+  });
+
+  document.querySelectorAll('.playBtn').forEach(btn => {
+    btn.onclick = (e) => {
+      const url = e.target.dataset.url;
+      playUrl(url);
+    };
+  });
+}
+
+async function refresh() {
+  const list = await fetchList();
+  renderList(list);
+  // если есть — установим плейлист в очередь
+  queue = list.map(i => i.url);
+  if (!currentUrl && queue.length) {
+    playNext();
+  }
+}
+
+const player = document.getElementById('player');
+const msg = document.getElementById('msg');
+let queue = [];
+let currentUrl = null;
+
+function playUrl(url) {
+  currentUrl = url;
+  player.src = url;
+  player.play();
+}
+
+function playNext() {
+  if (queue.length === 0) return;
+  const next = queue.shift();
+  playUrl(next);
+}
+
+player.addEventListener('ended', () => {
+  currentUrl = null;
+  playNext();
+});
+
+document.getElementById('gen').addEventListener('click', async () => {
+  const text = document.getElementById('text').value.trim();
+  if (!text) return alert('Введите текст');
+  msg.textContent = 'Генерируется...';
+  try {
+    const r = await fetch('/render', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text })
+    });
+    const j = await r.json();
+    if (j.error) { msg.textContent = 'Ошибка: ' + j.error; return; }
+    msg.textContent = 'Готово: ' + j.file;
+    // добавить в очередь и начать воспроизведение
+    queue.unshift(j.url); // поставить в начало
+    playNext();
+    // обновим список
+    setTimeout(refresh, 800);
+  } catch (e) {
+    msg.textContent = 'Ошибка: ' + e;
+  }
+});
+
+document.getElementById('refresh').addEventListener('click', refresh);
+
+// инициализация
+refresh();
+</script>
+</body>
+</html>

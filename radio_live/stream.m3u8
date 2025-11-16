@@ -1,0 +1,13 @@
+async function updateStream() {
+    const res = await fetch("/radio_live/stream.m3u8", { method: "HEAD" });
+
+    if (res.status === 200) {
+        audio.src = "/radio_live/stream.m3u8?v=" + Date.now();
+    } else {
+        audio.src = "/radio/normal/stream.m3u8";
+    }
+
+    audio.play();
+}
+
+setInterval(updateStream, 2000);

@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <title>Radiopoet · Playlist Manager</title>
+
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background: #0f172a;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      color: #e2e8f0;
+    }
+
+    .container {
+      max-width: 700px;
+      margin: 40px auto;
+      background: rgba(30, 41, 59, 0.9);
+      padding: 30px;
+      border-radius: 20px;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.35);
+      border: 1px solid rgba(100, 116, 139, 0.2);
+    }
+
+    h1 {
+      margin: 0;
+      margin-bottom: 15px;
+      font-size: 26px;
+    }
+
+    .subtitle {
+      margin-bottom: 25px;
+      color: #94a3b8;
+      font-size: 14px;
+    }
+
+    #uploadArea {
+      border: 2px dashed rgba(148, 163, 184, 0.3);
+      padding: 25px;
+      text-align: center;
+      border-radius: 16px;
+      color: #cbd5e1;
+      margin-bottom: 25px;
+      transition: background 0.2s, border-color 0.2s;
+    }
+
+    #uploadArea.drag {
+      background: rgba(148, 163, 184, 0.1);
+      border-color: #a5b4fc;
+    }
+
+    #playlist {
+      margin-top: 10px;
+    }
+
+    .track {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: rgba(15, 23, 42, 0.6);
+      padding: 12px 16px;
+      border-radius: 12px;
+      margin-bottom: 10px;
+      border: 1px solid rgba(148, 163, 184, 0.15);
+    }
+
+    .filename {
+      font-size: 15px;
+      max-width: 60%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    button {
+      background: rgba(67, 56, 202, 0.6);
+      border: 0;
+      color: white;
+      padding: 8px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: 0.2s;
+      margin-left: 5px;
+    }
+
+    button:hover {
+      background: rgba(79, 70, 229, 0.85);
+    }
+
+    button.delete {
+      background: rgba(190, 18, 60, 0.6);
+    }
+    button.delete:hover {
+      background: rgba(225, 29, 72, 0.85);
+    }
+
+  </style>
+
+</head>
+<body>
+
+<div class="container">
+  <h1>🎚 Radiopoet Playlist</h1>
+  <div class="subtitle">Управление ротацией радио · перетаскивай mp3 или нажми загрузку</div>
+
+  <div id="uploadArea">
+    Перетащи сюда mp3 или нажми, чтобы выбрать файл<br><br>
+    <input type="file" id="fileInput" accept=".mp3" style="display:none;" />
+    <button onclick="document.getElementById('fileInput').click()">Загрузить файл</button>
+  </div>
+
+  <h2 style="margin-top:30px; font-size:20px; margin-bottom:15px;">Текущий плейлист</h2>
+  <div id="playlist"></div>
+</div>
+
+
+<button id="goLive" style="padding:10px;background:#d32f2f;color:white;border:none;border-radius:8px;">
+  🔴 В ЭФИР
+</button>
+
+
+<script>
+async function fetchPlaylist() {
+  const res = await fetch('/playlist/list');
+  const data = await res.json();
+  renderPlaylist(data);
+}
+
+function renderPlaylist(list) {
+  const container = document.getElementById('playlist');
+  container.innerHTML = '';
+
+  list.forEach(item => {
+    const row = document.createElement('div');
+    row.className = 'track';
+
+    const name = document.createElement('div');
+    name.className = 'filename';
+    name.textContent = item.name;
+
+    const btnUp = document.createElement('button');
+    btnUp.textContent = '↑';
+    btnUp.onclick = () => moveUp(item.name);
+
+    const btnDown = document.createElement('button');
+    btnDown.textContent = '↓';
+    btnDown.onclick = () => moveDown(item.name);
+
+    const btnDel = document.createElement('button');
+    btnDel.textContent = '×';
+    btnDel.className = 'delete';
+    btnDel.onclick = () => removeFile(item.name);
+
+    const controls = document.createElement('div');
+    controls.appendChild(btnUp);
+    controls.appendChild(btnDown);
+    controls.appendChild(btnDel);
+
+    row.appendChild(name);
+    row.appendChild(controls);
+    container.appendChild(row);
+  });
+}
+
+async function uploadFile(file) {
+  const fd = new FormData();
+  fd.append('file', file);
+
+  await fetch('/playlist/upload', {
+    method: 'POST',
+    body: fd
+  });
+
+  fetchPlaylist();
+}
+
+async function removeFile(name) {
+  await fetch('/playlist/delete', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ filename: name })
+  });
+
+  fetchPlaylist();
+}
+
+async function moveUp(name) {
+  await fetch('/playlist/move-up', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ filename: name })
+  });
+  fetchPlaylist();
+}
+
+async function moveDown(name) {
+  await fetch('/playlist/move-down', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ filename: name })
+  });
+  fetchPlaylist();
+}
+
+// Drag & Drop
+const area = document.getElementById('uploadArea');
+
+area.addEventListener('dragover', e => {
+  e.preventDefault();
+  area.classList.add('drag');
+});
+
+area.addEventListener('dragleave', () => {
+  area.classList.remove('drag');
+});
+
+area.addEventListener('drop', e => {
+  e.preventDefault();
+  area.classList.remove('drag');
+  const file = e.dataTransfer.files[0];
+  if (file && file.name.endsWith('.mp3')) {
+    uploadFile(file);
+  }
+});
+
+document.getElementById('fileInput').addEventListener('change', e => {
+  const file = e.target.files[0];
+  if (file) uploadFile(file);
+});
+
+// Init
+fetchPlaylist();
+</script>
+
+<script>
+document.getElementById("goLive").onclick = async () => {
+    alert("🎤 Начинаем прямой эфир...");
+
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+    const ws = new WebSocket("ws://localhost:4000/live");
+
+    const audioCtx = new AudioContext({ sampleRate: 48000 });
+    const src = audioCtx.createMediaStreamSource(stream);
+
+    const processor = audioCtx.createScriptProcessor(2048, 1, 1);
+
+    src.connect(processor);
+    processor.connect(audioCtx.destination);
+
+    processor.onaudioprocess = e => {
+        if (ws.readyState === 1) {
+            const pcm = e.inputBuffer.getChannelData(0);
+            const buffer = new Int16Array(pcm.length);
+            for (let i = 0; i < pcm.length; i++) {
+                buffer[i] = pcm[i] * 32767; // float → int16
+            }
+            ws.send(Buffer.from(buffer.buffer));
+        }
+    };
+
+    ws.onopen = () => {
+        console.log("WS Live connected");
+    };
+
+    ws.onclose = () => {
+        alert("⛔ Эфир завершён");
+    };
+};
+</script>
+
+
+</body>
+</html>
